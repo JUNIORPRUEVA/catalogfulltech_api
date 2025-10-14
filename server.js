@@ -11,13 +11,14 @@ app.use(express.json());
 
 // 🔗 Conexión a PostgreSQL (ajusta tus datos reales)
 const pool = new pg.Pool({
-  host: "gcdndd.easypanel.host",  // ✅ tu host externo de PostgreSQL
+  host: "gcdndd.easypanel.host",  // tu host externo
   port: 5432,
   user: "n8n_user",
   password: "Ayleen10.yahaira",
   database: "fulltechcatalog",
-  ssl: { rejectUnauthorized: false } // evita error de SSL
+  ssl: false // 🚫 Desactiva SSL, ya que PostgreSQL no lo soporta
 });
+
 
 
 

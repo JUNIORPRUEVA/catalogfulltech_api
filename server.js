@@ -1,131 +1,75 @@
-// === API FULLTECH - Catálogo de Productos ===
-// Autor: Junior Lopez - FULLTECH SRL
-// Fecha: 2025
-// ---------------------------------------------------
+// ==========================
+//  SERVER FULLTECH PROXY
+// ==========================
+// Autor: Junior Lopez (Fulltech SRL)
+// Descripción: Proxy para servir imágenes de AppSheet a FlutterFlow sin bloqueo CORS.
 
 import express from "express";
-import pg from "pg";
+import fetch from "node-fetch";
 import cors from "cors";
+import dotenv from "dotenv";
 
+dotenv.config();
 const app = express();
+
+// === CONFIGURACIÓN GENERAL ===
 app.use(cors());
 app.use(express.json());
 
-// ---------------------------------------------------
-// 🔗 Conexión a PostgreSQL (ajusta tus credenciales reales)
-// ---------------------------------------------------
-const pool = new pg.Pool({
-  host: "gcdndd.easypanel.host",
-  port: 5432,
-  user: "n8n_user",
-  password: "Ayleen10.yahaira",
-  database: "fulltechcatalog",
-  ssl: false, // EasyPanel usa conexión local, sin SSL
-});
+// === CONFIGURACIÓN DEL APP DE APPSHEET ===
+const APP_NAME = "FULLTECH-856669664-25-01-31"; // Nombre exacto del app de AppSheet
+const TABLE_NAME = "productos%203";              // El nombre de la tabla (codificado los espacios)
+const PORT = process.env.PORT || 3000;
 
-// ---------------------------------------------------
-// ✅ Ruta principal (verificación rápida)
-// ---------------------------------------------------
+// === RUTA PRINCIPAL (Prueba rápida) ===
 app.get("/", (req, res) => {
-  res.send("🚀 API FULLTECH Catalog funcionando correctamente");
+  res.send("✅ Servidor Proxy Fulltech funcionando correctamente 🚀");
 });
 
-// ---------------------------------------------------
-// ✅ Obtener todos los productos
-// ---------------------------------------------------
-app.get("/productos", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM productos ORDER BY id DESC");
-
-    // 🔄 Agregamos campos de proxy de imagen
-    const productos = result.rows.map((p) => ({
-      ...p,
-      imagen1_proxy: p.imagen1
-        ? `https://api_catalogo-fulltech-flutterflow.gcdndd.easypanel.host/imagen?url=${encodeURIComponent(p.imagen1)}`
-        : null,
-      imagen2_proxy: p.imagen2
-        ? `https://api_catalogo-fulltech-flutterflow.gcdndd.easypanel.host/imagen?url=${encodeURIComponent(p.imagen2)}`
-        : null,
-      imagen3_proxy: p.imagen3
-        ? `https://api_catalogo-fulltech-flutterflow.gcdndd.easypanel.host/imagen?url=${encodeURIComponent(p.imagen3)}`
-        : null,
-    }));
-
-    res.json(productos);
-  } catch (error) {
-    console.error("❌ Error al obtener productos:", error);
-    res.status(500).json({ error: "Error al obtener productos" });
-  }
-});
-
-// ---------------------------------------------------
-// ✅ Obtener producto por ID
-// ---------------------------------------------------
-app.get("/productos/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query("SELECT * FROM productos WHERE id = $1", [
-      id,
-    ]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Producto no encontrado" });
-    }
-
-    const p = result.rows[0];
-    const producto = {
-      ...p,
-      imagen1_proxy: p.imagen1
-        ? `https://api_catalogo-fulltech-flutterflow.gcdndd.easypanel.host/imagen?url=${encodeURIComponent(p.imagen1)}`
-        : null,
-      imagen2_proxy: p.imagen2
-        ? `https://api_catalogo-fulltech-flutterflow.gcdndd.easypanel.host/imagen?url=${encodeURIComponent(p.imagen2)}`
-        : null,
-      imagen3_proxy: p.imagen3
-        ? `https://api_catalogo-fulltech-flutterflow.gcdndd.easypanel.host/imagen?url=${encodeURIComponent(p.imagen3)}`
-        : null,
-    };
-
-    res.json(producto);
-  } catch (error) {
-    console.error("❌ Error al obtener producto por ID:", error);
-    res.status(500).json({ error: "Error al obtener producto" });
-  }
-});
-
-// ---------------------------------------------------
-// ✅ Proxy de imágenes (para evitar bloqueos CORS)
-// ---------------------------------------------------
+// === RUTA PRINCIPAL PARA LAS IMÁGENES ===
+// Ejemplo de uso:
+// https://tu-dominio/imagen?file=productos%203_Images/e55ea294.imagen1_archivo.020826.jpg
 app.get("/imagen", async (req, res) => {
   try {
-    const { url } = req.query;
-    if (!url) return res.status(400).send("Falta parámetro 'url'");
-
-    // ✅ Usa fetch nativo de Node.js 18 (no necesita import)
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return res
-        .status(response.status)
-        .send(`Error al obtener imagen: ${response.statusText}`);
+    const file = req.query.file;
+    if (!file) {
+      return res.status(400).json({
+        error: "Falta el parámetro 'file'. Ejemplo: /imagen?file=productos%203_Images/archivo.jpg"
+      });
     }
 
-    const contentType = response.headers.get("content-type");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Content-Type", contentType);
+    // Construimos la URL real de AppSheet
+    const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${encodeURIComponent(file)}`;
 
+    console.log("📡 Solicitando imagen desde:", appsheetUrl);
+
+    // Hacemos la solicitud a AppSheet
+    const response = await fetch(appsheetUrl);
+    if (!response.ok) {
+      console.error("❌ Error al obtener la imagen:", response.statusText);
+      return res.status(502).json({
+        error: `Error al descargar la imagen (${response.status})`
+      });
+    }
+
+    // Leemos el contenido binario (imagen)
     const buffer = await response.arrayBuffer();
+
+    // Detectamos el tipo de contenido (si AppSheet lo envía)
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    res.set("Content-Type", contentType);
+
+    // Enviamos la imagen directamente al cliente (FlutterFlow)
     res.send(Buffer.from(buffer));
+
   } catch (error) {
-    console.error("❌ Error cargando imagen:", error);
-    res.status(500).send("Error cargando imagen: " + error.message);
+    console.error("⚠️ Error interno del servidor:", error.message);
+    res.status(500).json({ error: "Error interno del proxy al procesar la imagen." });
   }
 });
 
-// ---------------------------------------------------
-// 🚀 Inicializar servidor
-// ---------------------------------------------------
-const PORT = 8080;
-app.listen(PORT, () =>
-  console.log(`🔥 Servidor FULLTECH corriendo en puerto ${PORT}`)
-);
+// === INICIO DEL SERVIDOR ===
+app.listen(PORT, () => {
+  console.log(`🟢 Proxy Fulltech activo en el puerto ${PORT}`);
+  console.log(`🌎 Ejemplo: http://localhost:${PORT}/imagen?file=productos%203_Images/tu_imagen.jpg`);
+});

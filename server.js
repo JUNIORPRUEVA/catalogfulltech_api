@@ -1,13 +1,3 @@
-/**
- * ==========================================
- *  SERVER FULLTECH PROXY (versión liviana)
- * ==========================================
- * Autor: Junior Lopez (Fulltech SRL)
- * Descripción:
- * Proxy para servir imágenes de AppSheet en FlutterFlow
- * evitando errores CORS y mostrando las imágenes sin bloqueo.
- */
-
 import express from "express";
 import cors from "cors";
 
@@ -15,49 +5,63 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ⚙️ CONFIGURACIÓN DEL APP DE APPSHEET
-const APP_NAME = "FULLTECH-856669664-25-01-31"; // Nombre de tu app en AppSheet
-const TABLE_NAME = "productos%203"; // Nombre de la tabla (con espacio codificado)
-const PORT = process.env.PORT || 3000;
+// CONFIG
+const APP_NAME = "FULLTECH-856669664-25-01-31";
+const TABLE_NAME = "productos%203";
+const BASE_URL = "https://api-catalogo-fulltech-flutterflow-api-catalogo-flutterflow.gcdndd.easypanel.host";
+const PORT = process.env.PORT || 8080;
 
-// 🟢 RUTA PRINCIPAL PARA PRUEBA
+// TEST
 app.get("/", (req, res) => {
   res.send("✅ Servidor Proxy Fulltech corriendo perfectamente 🚀");
 });
 
-// 🖼️ RUTA PRINCIPAL PARA IMÁGENES
+// 🔹 Ruta para obtener la lista de productos
+app.get("/productos", async (req, res) => {
+  try {
+    // 🔧 Aquí debes poner tu API real de productos (por ejemplo, la que tienes en EasyPanel o Supabase)
+    // Ejemplo temporal: simulamos algunos productos
+    const productos = [
+      {
+        id: 1,
+        titulo: "Cámara Hilook 4MP ColorVu",
+        descripcion: "Sistema completo con instalación incluida",
+        precio: 16900,
+        imagen1: `${BASE_URL}/imagen?file=productos%203_Images/e55ea294.imagen1_archivo.020826.jpg`,
+      },
+      {
+        id: 2,
+        titulo: "Taladro 48V Fulltech",
+        descripcion: "Incluye 2 baterías, cargador y maletín",
+        precio: 3500,
+        imagen1: `${BASE_URL}/imagen?file=productos%203_Images/ejemplo2.jpg`,
+      },
+    ];
+
+    res.json(productos);
+  } catch (err) {
+    console.error("❌ Error al obtener productos:", err);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
+// 🔹 Ruta para servir imágenes de AppSheet
 app.get("/imagen", async (req, res) => {
   try {
     const file = req.query.file;
-    if (!file) {
-      return res.status(400).json({
-        error: "Falta el parámetro 'file'. Ejemplo: /imagen?file=productos%203_Images/archivo.jpg",
-      });
-    }
+    if (!file)
+      return res.status(400).json({ error: "Falta el parámetro 'file'" });
 
-    // Construimos la URL real de AppSheet
     const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${encodeURIComponent(file)}`;
 
-    console.log("📡 Solicitando imagen desde AppSheet:", appsheetUrl);
-
-    // Usamos el fetch nativo de Node 18+
     const response = await fetch(appsheetUrl);
+    if (!response.ok)
+      return res.status(502).json({ error: "Error al descargar la imagen" });
 
-    if (!response.ok) {
-      console.error("❌ Error al obtener la imagen:", response.statusText);
-      return res.status(502).json({
-        error: `Error al descargar la imagen (${response.status})`,
-      });
-    }
-
-    // Obtenemos los datos binarios (buffer)
     const buffer = await response.arrayBuffer();
-
-    // Detectamos tipo MIME (jpg, png, etc.)
     const contentType = response.headers.get("content-type") || "image/jpeg";
-    res.setHeader("Content-Type", contentType);
 
-    // Enviamos la imagen directamente al navegador / FlutterFlow
+    res.setHeader("Content-Type", contentType);
     res.send(Buffer.from(buffer));
   } catch (error) {
     console.error("⚠️ Error interno:", error.message);
@@ -65,8 +69,7 @@ app.get("/imagen", async (req, res) => {
   }
 });
 
-// 🚀 INICIO DEL SERVIDOR
+// START
 app.listen(PORT, () => {
   console.log(`🟢 Proxy Fulltech activo en el puerto ${PORT}`);
-  console.log(`🌎 Ejemplo: http://localhost:${PORT}/imagen?file=productos%203_Images/tu_imagen.jpg`);
 });

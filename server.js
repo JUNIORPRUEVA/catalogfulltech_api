@@ -4,7 +4,6 @@
 import express from "express";
 import pg from "pg";
 import cors from "cors";
-import fetch from "node-fetch"; // 👈 NECESARIO PARA CARGAR LAS IMÁGENES EXTERNAS
 
 const app = express();
 app.use(cors());
@@ -31,6 +30,7 @@ app.get("/productos", async (req, res) => {
     const result = await pool.query("SELECT * FROM productos ORDER BY id DESC");
     res.json(result.rows);
   } catch (error) {
+    console.error("❌ Error en /productos:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -45,6 +45,7 @@ app.get("/productos/:id", async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (error) {
+    console.error("❌ Error en /productos/:id:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -52,25 +53,26 @@ app.get("/productos/:id", async (req, res) => {
 // ✅ NUEVA RUTA: Proxy para mostrar imágenes externas (AppSheet)
 app.get("/imagen", async (req, res) => {
   try {
-    const imageUrl = req.query.url; // ej: ?url=https://www.appsheet.com/template/gettablefileurl...
+    const imageUrl = req.query.url; // Ejemplo: ?url=https://www.appsheet.com/template/gettablefileurl...
     if (!imageUrl) {
       return res.status(400).send("Falta el parámetro 'url'");
     }
 
+    // 🚀 Usa el fetch nativo de Node.js 18+ (sin necesidad de node-fetch)
     const response = await fetch(imageUrl);
     if (!response.ok) {
+      console.error("⚠️ Error al obtener la imagen:", response.status, response.statusText);
       return res.status(404).send("No se pudo obtener la imagen");
     }
 
-    // Detectar tipo MIME automáticamente
-    const contentType = response.headers.get("content-type");
-    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const arrayBuffer = await response.arrayBuffer();
 
-    res.setHeader("Content-Type", contentType || "image/jpeg");
-    res.send(Buffer.from(buffer));
+    res.setHeader("Content-Type", contentType);
+    res.send(Buffer.from(arrayBuffer));
   } catch (error) {
-    console.error("Error al cargar imagen:", error);
-    res.status(500).send("Error al cargar imagen");
+    console.error("❌ Error al cargar imagen:", error);
+    res.status(500).send("Error interno al cargar imagen");
   }
 });
 

@@ -6,7 +6,6 @@
 import express from "express";
 import pg from "pg";
 import cors from "cors";
-import fetch from "node-fetch"; // Para hacer proxy de imágenes
 
 const app = express();
 app.use(cors());
@@ -21,7 +20,7 @@ const pool = new pg.Pool({
   user: "n8n_user",
   password: "Ayleen10.yahaira",
   database: "fulltechcatalog",
-  ssl: false // Mantener en false, EasyPanel no usa SSL local
+  ssl: false, // EasyPanel usa conexión local, sin SSL
 });
 
 // ---------------------------------------------------
@@ -32,13 +31,13 @@ app.get("/", (req, res) => {
 });
 
 // ---------------------------------------------------
-// ✅ Ruta para obtener todos los productos
+// ✅ Obtener todos los productos
 // ---------------------------------------------------
 app.get("/productos", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM productos ORDER BY id DESC");
 
-    // 🔄 Convertimos los datos para incluir URLs de proxy de imagen
+    // 🔄 Agregamos campos de proxy de imagen
     const productos = result.rows.map((p) => ({
       ...p,
       imagen1_proxy: p.imagen1
@@ -60,7 +59,7 @@ app.get("/productos", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// ✅ Ruta para obtener producto por ID
+// ✅ Obtener producto por ID
 // ---------------------------------------------------
 app.get("/productos/:id", async (req, res) => {
   try {
@@ -95,14 +94,14 @@ app.get("/productos/:id", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// ✅ Proxy de imágenes (para evitar bloqueos CORS en FlutterFlow)
+// ✅ Proxy de imágenes (para evitar bloqueos CORS)
 // ---------------------------------------------------
 app.get("/imagen", async (req, res) => {
   try {
     const { url } = req.query;
     if (!url) return res.status(400).send("Falta parámetro 'url'");
 
-    // Descargamos la imagen desde la URL original
+    // ✅ Usa fetch nativo de Node.js 18 (no necesita import)
     const response = await fetch(url);
 
     if (!response.ok) {

@@ -1,57 +1,75 @@
+// ==========================
+//  SERVER FULLTECH PROXY
+// ==========================
+// Autor: Junior Lopez (Fulltech SRL)
+// Descripción: Proxy para servir imágenes de AppSheet a FlutterFlow sin bloqueo CORS.
+
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 import dotenv from "dotenv";
 
 dotenv.config();
-
 const app = express();
+
+// === CONFIGURACIÓN GENERAL ===
 app.use(cors());
+app.use(express.json());
 
-// === CONFIGURACIÓN ===
-const APP_NAME = "FULLTECH-856669664-25-01-31";
-const TABLE_NAME = "productos%203"; // ¡Ojo con los espacios codificados!
+// === CONFIGURACIÓN DEL APP DE APPSHEET ===
+const APP_NAME = "FULLTECH-856669664-25-01-31"; // Nombre exacto del app de AppSheet
+const TABLE_NAME = "productos%203";              // El nombre de la tabla (codificado los espacios)
+const PORT = process.env.PORT || 3000;
 
-// Ruta principal (para probar que el server está vivo)
+// === RUTA PRINCIPAL (Prueba rápida) ===
 app.get("/", (req, res) => {
-  res.send("🟢 Proxy Fulltech funcionando correctamente.");
+  res.send("✅ Servidor Proxy Fulltech funcionando correctamente 🚀");
 });
 
-// === PROXY PARA LAS IMÁGENES ===
+// === RUTA PRINCIPAL PARA LAS IMÁGENES ===
+// Ejemplo de uso:
+// https://tu-dominio/imagen?file=productos%203_Images/e55ea294.imagen1_archivo.020826.jpg
 app.get("/imagen", async (req, res) => {
   try {
     const file = req.query.file;
     if (!file) {
-      return res.status(400).json({ error: "Falta el parámetro 'file'." });
+      return res.status(400).json({
+        error: "Falta el parámetro 'file'. Ejemplo: /imagen?file=productos%203_Images/archivo.jpg"
+      });
     }
 
-    // Construimos el enlace de AppSheet
+    // Construimos la URL real de AppSheet
     const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${encodeURIComponent(file)}`;
 
-    // Descargamos la imagen desde AppSheet
+    console.log("📡 Solicitando imagen desde:", appsheetUrl);
+
+    // Hacemos la solicitud a AppSheet
     const response = await fetch(appsheetUrl);
     if (!response.ok) {
-      throw new Error(`Error al obtener imagen (${response.status})`);
+      console.error("❌ Error al obtener la imagen:", response.statusText);
+      return res.status(502).json({
+        error: `Error al descargar la imagen (${response.status})`
+      });
     }
 
-    // Leemos el contenido binario
+    // Leemos el contenido binario (imagen)
     const buffer = await response.arrayBuffer();
 
-    // Asignamos el tipo de contenido original
+    // Detectamos el tipo de contenido (si AppSheet lo envía)
     const contentType = response.headers.get("content-type") || "image/jpeg";
     res.set("Content-Type", contentType);
 
-    // Enviamos la imagen al cliente
+    // Enviamos la imagen directamente al cliente (FlutterFlow)
     res.send(Buffer.from(buffer));
+
   } catch (error) {
-    console.error("❌ Error en /imagen:", error.message);
-    res.status(500).json({ error: "Error al procesar la imagen." });
+    console.error("⚠️ Error interno del servidor:", error.message);
+    res.status(500).json({ error: "Error interno del proxy al procesar la imagen." });
   }
 });
 
 // === INICIO DEL SERVIDOR ===
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Servidor corriendo en puerto ${PORT}`);
-  console.log(`👉 Ejemplo: http://localhost:${PORT}/imagen?file=productos%203_Images/e55ea294.imagen1_archivo.020826.jpg`);
+  console.log(`🟢 Proxy Fulltech activo en el puerto ${PORT}`);
+  console.log(`🌎 Ejemplo: http://localhost:${PORT}/imagen?file=productos%203_Images/tu_imagen.jpg`);
 });

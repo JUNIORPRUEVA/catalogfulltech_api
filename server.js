@@ -1,62 +1,107 @@
+// ===============================
+// ✅ FULLTECH API PROXY - COMPLETO
+// ===============================
+
 import express from "express";
 import cors from "cors";
+import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// CONFIG
-const APP_NAME = "FULLTECH-856669664-25-01-31";
-const TABLE_NAME = "productos%203";
+// ===============================
+// 🔧 CONFIGURACIÓN PRINCIPAL
+// ===============================
+const APP_NAME = "FULLTECH-856669664-25-01-31"; // tu nombre real de AppSheet
+const TABLE_NAME = "productos%203"; // el nombre exacto de tu tabla
 const BASE_URL = "https://api-catalogo-fulltech-flutterflow-api-catalogo-flutterflow.gcdndd.easypanel.host";
 const PORT = process.env.PORT || 8080;
 
-// TEST
+// ===============================
+// 🧠 FUNCIÓN: Generar URL de imagen AppSheet
+// ===============================
+const generarImagenUrl = (fileName) => {
+  if (!fileName) return null;
+  return `${BASE_URL}/imagen?file=${encodeURIComponent(fileName)}`;
+};
+
+// ===============================
+// 🚀 RUTA TEST
+// ===============================
 app.get("/", (req, res) => {
   res.send("✅ Servidor Proxy Fulltech corriendo perfectamente 🚀");
 });
 
-// 🔹 Ruta para obtener la lista de productos
+// ===============================
+// 📦 RUTA PRINCIPAL DE PRODUCTOS
+// ===============================
 app.get("/productos", async (req, res) => {
   try {
-    // 🔧 Aquí debes poner tu API real de productos (por ejemplo, la que tienes en EasyPanel o Supabase)
-    // Ejemplo temporal: simulamos algunos productos
+    // ⚠️ Datos de ejemplo (puedes conectarlo luego a tu BD o AppSheet API)
     const productos = [
       {
-        id: 1,
-        titulo: "Cámara Hilook 4MP ColorVu",
-        descripcion: "Sistema completo con instalación incluida",
+        id: "001",
+        codigo: "HLK-4MP",
+        descripcion: "Cámara Hilook 4MP ColorVu",
+        detalle: "Sistema completo con DVR, cableado, instalación y soporte Fulltech.",
         precio: 16900,
-        imagen1: `${BASE_URL}/imagen?file=productos%203_Images/e55ea294.imagen1_archivo.020826.jpg`,
+        coste: 11000,
+        stock: 8,
+        minimo_compra: 1,
+        maximo_compra: 10,
+        disponible: true,
+        categoria: "Seguridad",
+        marca: "Hilook",
+        imagen1: generarImagenUrl("productos%203_Images/e55ea294.imagen1_archivo.020826.jpg"),
+        imagen2: generarImagenUrl("productos%203_Images/e55ea294.imagen2_archivo.jpg"),
+        imagen3: generarImagenUrl("productos%203_Images/e55ea294.imagen3_archivo.jpg"),
+        fecha_creacion: "2025-10-18T00:00:00Z",
+        fecha_actualizacion: "2025-10-18T00:00:00Z",
       },
       {
-        id: 2,
-        titulo: "Taladro 48V Fulltech",
-        descripcion: "Incluye 2 baterías, cargador y maletín",
+        id: "002",
+        codigo: "TLDR-48V",
+        descripcion: "Taladro inalámbrico 48V Fulltech",
+        detalle: "Incluye 2 baterías, cargador rápido y maletín resistente.",
         precio: 3500,
-        imagen1: `${BASE_URL}/imagen?file=productos%203_Images/ejemplo2.jpg`,
+        coste: 2600,
+        stock: 15,
+        minimo_compra: 1,
+        maximo_compra: 20,
+        disponible: true,
+        categoria: "Herramientas",
+        marca: "Fulltech",
+        imagen1: generarImagenUrl("productos%203_Images/taladro48v_imagen1.jpg"),
+        imagen2: generarImagenUrl("productos%203_Images/taladro48v_imagen2.jpg"),
+        imagen3: generarImagenUrl("productos%203_Images/taladro48v_imagen3.jpg"),
+        fecha_creacion: "2025-10-18T00:00:00Z",
+        fecha_actualizacion: "2025-10-18T00:00:00Z",
       },
     ];
 
     res.json(productos);
-  } catch (err) {
-    console.error("❌ Error al obtener productos:", err);
+  } catch (error) {
+    console.error("❌ Error al obtener productos:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
-// 🔹 Ruta para servir imágenes de AppSheet
+// ===============================
+// 🖼️ RUTA PARA SERVIR IMÁGENES DE APPSHEET
+// ===============================
 app.get("/imagen", async (req, res) => {
   try {
     const file = req.query.file;
-    if (!file)
-      return res.status(400).json({ error: "Falta el parámetro 'file'" });
+    if (!file) return res.status(400).json({ error: "Falta el parámetro 'file'" });
 
-    const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${encodeURIComponent(file)}`;
-
+    // 🔗 Construir URL oficial de AppSheet
+    const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${file}`;
     const response = await fetch(appsheetUrl);
-    if (!response.ok)
-      return res.status(502).json({ error: "Error al descargar la imagen" });
+
+    if (!response.ok) {
+      return res.status(502).json({ error: "Error al obtener la imagen desde AppSheet" });
+    }
 
     const buffer = await response.arrayBuffer();
     const contentType = response.headers.get("content-type") || "image/jpeg";
@@ -69,7 +114,10 @@ app.get("/imagen", async (req, res) => {
   }
 });
 
-// START
+// ===============================
+// ▶️ INICIO DEL SERVIDOR
+// ===============================
 app.listen(PORT, () => {
   console.log(`🟢 Proxy Fulltech activo en el puerto ${PORT}`);
+  console.log(`🌍 URL base: ${BASE_URL}`);
 });

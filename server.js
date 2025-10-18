@@ -1,10 +1,9 @@
-// ===============================
-// ✅ FULLTECH API PROXY - COMPLETO
-// ===============================
+// ===============================================
+// ✅ FULLTECH API PROXY (SIN node-fetch NECESARIO)
+// ===============================================
 
 import express from "express";
 import cors from "cors";
-import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
@@ -13,8 +12,8 @@ app.use(express.json());
 // ===============================
 // 🔧 CONFIGURACIÓN PRINCIPAL
 // ===============================
-const APP_NAME = "FULLTECH-856669664-25-01-31"; // tu nombre real de AppSheet
-const TABLE_NAME = "productos%203"; // el nombre exacto de tu tabla
+const APP_NAME = "FULLTECH-856669664-25-01-31";
+const TABLE_NAME = "productos%203";
 const BASE_URL = "https://api-catalogo-fulltech-flutterflow-api-catalogo-flutterflow.gcdndd.easypanel.host";
 const PORT = process.env.PORT || 8080;
 
@@ -38,13 +37,13 @@ app.get("/", (req, res) => {
 // ===============================
 app.get("/productos", async (req, res) => {
   try {
-    // ⚠️ Datos de ejemplo (puedes conectarlo luego a tu BD o AppSheet API)
+    // ⚠️ Datos simulados (puedes conectar aquí tu base real)
     const productos = [
       {
         id: "001",
         codigo: "HLK-4MP",
         descripcion: "Cámara Hilook 4MP ColorVu",
-        detalle: "Sistema completo con DVR, cableado, instalación y soporte Fulltech.",
+        detalle: "Sistema completo con DVR, cableado e instalación incluida.",
         precio: 16900,
         coste: 11000,
         stock: 8,
@@ -95,10 +94,11 @@ app.get("/imagen", async (req, res) => {
     const file = req.query.file;
     if (!file) return res.status(400).json({ error: "Falta el parámetro 'file'" });
 
-    // 🔗 Construir URL oficial de AppSheet
+    // 🔗 Construir URL real de AppSheet
     const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${file}`;
-    const response = await fetch(appsheetUrl);
 
+    // 👉 Node 18+ ya trae "fetch" nativo
+    const response = await fetch(appsheetUrl);
     if (!response.ok) {
       return res.status(502).json({ error: "Error al obtener la imagen desde AppSheet" });
     }

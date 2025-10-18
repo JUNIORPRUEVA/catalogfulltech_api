@@ -4,6 +4,7 @@
 import express from "express";
 import pg from "pg";
 import cors from "cors";
+import fetch from "node-fetch"; // 👈 NECESARIO PARA CARGAR LAS IMÁGENES EXTERNAS
 
 const app = express();
 app.use(cors());
@@ -18,9 +19,6 @@ const pool = new pg.Pool({
   database: "fulltechcatalog",
   ssl: false // 🚫 Desactiva SSL, ya que PostgreSQL no lo soporta
 });
-
-
-
 
 // ✅ Ruta de prueba
 app.get("/", (req, res) => {
@@ -48,6 +46,31 @@ app.get("/productos/:id", async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ NUEVA RUTA: Proxy para mostrar imágenes externas (AppSheet)
+app.get("/imagen", async (req, res) => {
+  try {
+    const imageUrl = req.query.url; // ej: ?url=https://www.appsheet.com/template/gettablefileurl...
+    if (!imageUrl) {
+      return res.status(400).send("Falta el parámetro 'url'");
+    }
+
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      return res.status(404).send("No se pudo obtener la imagen");
+    }
+
+    // Detectar tipo MIME automáticamente
+    const contentType = response.headers.get("content-type");
+    const buffer = await response.arrayBuffer();
+
+    res.setHeader("Content-Type", contentType || "image/jpeg");
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error("Error al cargar imagen:", error);
+    res.status(500).send("Error al cargar imagen");
   }
 });
 

@@ -1,123 +1,57 @@
-// ===============================================
-// ✅ FULLTECH API PROXY (SIN node-fetch NECESARIO)
-// ===============================================
-
 import express from "express";
+import fetch from "node-fetch";
 import cors from "cors";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
-// ===============================
-// 🔧 CONFIGURACIÓN PRINCIPAL
-// ===============================
+// === CONFIGURACIÓN ===
 const APP_NAME = "FULLTECH-856669664-25-01-31";
-const TABLE_NAME = "productos%203";
-const BASE_URL = "https://api-catalogo-fulltech-flutterflow-api-catalogo-flutterflow.gcdndd.easypanel.host";
-const PORT = process.env.PORT || 8080;
+const TABLE_NAME = "productos%203"; // ¡Ojo con los espacios codificados!
 
-// ===============================
-// 🧠 FUNCIÓN: Generar URL de imagen AppSheet
-// ===============================
-const generarImagenUrl = (fileName) => {
-  if (!fileName) return null;
-  return `${BASE_URL}/imagen?file=${encodeURIComponent(fileName)}`;
-};
-
-// ===============================
-// 🚀 RUTA TEST
-// ===============================
+// Ruta principal (para probar que el server está vivo)
 app.get("/", (req, res) => {
-  res.send("✅ Servidor Proxy Fulltech corriendo perfectamente 🚀");
+  res.send("🟢 Proxy Fulltech funcionando correctamente.");
 });
 
-// ===============================
-// 📦 RUTA PRINCIPAL DE PRODUCTOS
-// ===============================
-app.get("/productos", async (req, res) => {
-  try {
-    // ⚠️ Datos simulados (puedes conectar aquí tu base real)
-    const productos = [
-      {
-        id: "001",
-        codigo: "HLK-4MP",
-        descripcion: "Cámara Hilook 4MP ColorVu",
-        detalle: "Sistema completo con DVR, cableado e instalación incluida.",
-        precio: 16900,
-        coste: 11000,
-        stock: 8,
-        minimo_compra: 1,
-        maximo_compra: 10,
-        disponible: true,
-        categoria: "Seguridad",
-        marca: "Hilook",
-        imagen1: generarImagenUrl("productos%203_Images/e55ea294.imagen1_archivo.020826.jpg"),
-        imagen2: generarImagenUrl("productos%203_Images/e55ea294.imagen2_archivo.jpg"),
-        imagen3: generarImagenUrl("productos%203_Images/e55ea294.imagen3_archivo.jpg"),
-        fecha_creacion: "2025-10-18T00:00:00Z",
-        fecha_actualizacion: "2025-10-18T00:00:00Z",
-      },
-      {
-        id: "002",
-        codigo: "TLDR-48V",
-        descripcion: "Taladro inalámbrico 48V Fulltech",
-        detalle: "Incluye 2 baterías, cargador rápido y maletín resistente.",
-        precio: 3500,
-        coste: 2600,
-        stock: 15,
-        minimo_compra: 1,
-        maximo_compra: 20,
-        disponible: true,
-        categoria: "Herramientas",
-        marca: "Fulltech",
-        imagen1: generarImagenUrl("productos%203_Images/taladro48v_imagen1.jpg"),
-        imagen2: generarImagenUrl("productos%203_Images/taladro48v_imagen2.jpg"),
-        imagen3: generarImagenUrl("productos%203_Images/taladro48v_imagen3.jpg"),
-        fecha_creacion: "2025-10-18T00:00:00Z",
-        fecha_actualizacion: "2025-10-18T00:00:00Z",
-      },
-    ];
-
-    res.json(productos);
-  } catch (error) {
-    console.error("❌ Error al obtener productos:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
-  }
-});
-
-// ===============================
-// 🖼️ RUTA PARA SERVIR IMÁGENES DE APPSHEET
-// ===============================
+// === PROXY PARA LAS IMÁGENES ===
 app.get("/imagen", async (req, res) => {
   try {
     const file = req.query.file;
-    if (!file) return res.status(400).json({ error: "Falta el parámetro 'file'" });
-
-    // 🔗 Construir URL real de AppSheet
-    const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${file}`;
-
-    // 👉 Node 18+ ya trae "fetch" nativo
-    const response = await fetch(appsheetUrl);
-    if (!response.ok) {
-      return res.status(502).json({ error: "Error al obtener la imagen desde AppSheet" });
+    if (!file) {
+      return res.status(400).json({ error: "Falta el parámetro 'file'." });
     }
 
-    const buffer = await response.arrayBuffer();
-    const contentType = response.headers.get("content-type") || "image/jpeg";
+    // Construimos el enlace de AppSheet
+    const appsheetUrl = `https://www.appsheet.com/template/gettablefileurl?appName=${APP_NAME}&tableName=${TABLE_NAME}&fileName=${encodeURIComponent(file)}`;
 
-    res.setHeader("Content-Type", contentType);
+    // Descargamos la imagen desde AppSheet
+    const response = await fetch(appsheetUrl);
+    if (!response.ok) {
+      throw new Error(`Error al obtener imagen (${response.status})`);
+    }
+
+    // Leemos el contenido binario
+    const buffer = await response.arrayBuffer();
+
+    // Asignamos el tipo de contenido original
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    res.set("Content-Type", contentType);
+
+    // Enviamos la imagen al cliente
     res.send(Buffer.from(buffer));
   } catch (error) {
-    console.error("⚠️ Error interno:", error.message);
-    res.status(500).json({ error: "Error interno al procesar la imagen." });
+    console.error("❌ Error en /imagen:", error.message);
+    res.status(500).json({ error: "Error al procesar la imagen." });
   }
 });
 
-// ===============================
-// ▶️ INICIO DEL SERVIDOR
-// ===============================
+// === INICIO DEL SERVIDOR ===
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🟢 Proxy Fulltech activo en el puerto ${PORT}`);
-  console.log(`🌍 URL base: ${BASE_URL}`);
+  console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+  console.log(`👉 Ejemplo: http://localhost:${PORT}/imagen?file=productos%203_Images/e55ea294.imagen1_archivo.020826.jpg`);
 });

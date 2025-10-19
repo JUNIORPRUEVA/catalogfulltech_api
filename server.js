@@ -24,14 +24,20 @@ app.get("/", (req, res) => {
   res.send("🚀 API FULLTECH Catalog corriendo correctamente");
 });
 
-// ✅ Proxy para mostrar imágenes externas (sin node-fetch)
+// ✅ Proxy para mostrar imágenes externas (con decodificación de URLs)
 app.get("/imagen", async (req, res) => {
   try {
-    const imageUrl = req.query.url;
+    let imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send("Falta el parámetro 'url'");
 
+    // 🔑 Solución: decodificar URL por si viene doblemente codificada
+    imageUrl = decodeURIComponent(imageUrl);
+
     const response = await fetch(imageUrl);
-    if (!response.ok) return res.status(404).send("No se pudo obtener la imagen");
+    if (!response.ok) {
+      console.error("⚠️ Error al obtener imagen:", response.status, response.statusText);
+      return res.status(404).send("No se pudo obtener la imagen");
+    }
 
     const contentType = response.headers.get("content-type");
     const arrayBuffer = await response.arrayBuffer();

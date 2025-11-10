@@ -1,5 +1,5 @@
 {
-  "name": "fulltech_api",
+  "name": "fulltech_conversaciones_api",
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",

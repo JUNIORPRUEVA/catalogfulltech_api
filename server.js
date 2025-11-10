@@ -1,5 +1,5 @@
-// === API FULLTECH - Conversaciones con PostgreSQL ===
-// Desarrollado por: Junior López - FULLTECH SRL
+// === API FULLTECH - Conversaciones y Mensajes ===
+// Junior López - FULLTECH SRL
 
 import express from "express";
 import cors from "cors";
@@ -12,12 +12,12 @@ app.use(express.json());
 
 // 💾 Conexión directa a PostgreSQL (mismo servidor Easypanel)
 const pool = new Pool({
-  host: "postgresql_postgres-n8n",  // Nombre interno del servicio PostgreSQL
+  host: "postgresql_postgres-n8n",  // servicio interno del contenedor PostgreSQL
   port: 5432,
-  database: "n8n",                  // Base de datos existente
-  user: "n8n_user",                 // Usuario del servicio PostgreSQL
-  password: "Ayleen10.yahaira",     // Contraseña del usuario
-  ssl: false
+  database: "n8n",
+  user: "n8n_user",
+  password: "Ayleen10.yahaira",
+  ssl: false,
 });
 
 // 🧱 Crear tablas si no existen
@@ -49,15 +49,20 @@ async function ensureTables() {
   }
 }
 
-// 🟢 Ruta de prueba
+// 🟢 Endpoint raíz
 app.get("/", (req, res) => {
-  res.send("🚀 API Conversaciones FULLTECH corriendo correctamente");
+  res.send("🚀 API FULLTECH Conversaciones corriendo correctamente");
 });
 
-// 🟢 Verificación de estado
+// 🟢 Endpoint de estado
 app.get("/ping", (req, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
 });
+
+
+// =========================
+// 🔹 ENDPOINTS CRUD
+// =========================
 
 // 🧩 Crear conversación
 app.post("/api/conversations", async (req, res) => {
@@ -71,6 +76,31 @@ app.post("/api/conversations", async (req, res) => {
   } catch (error) {
     console.error("⚠️ Error al crear conversación:", error);
     res.status(500).json({ error: "Error al crear conversación" });
+  }
+});
+
+// 🧩 Obtener todas las conversaciones
+app.get("/api/conversations", async (_, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM fulltechuiconversation ORDER BY created_at DESC"
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("⚠️ Error al obtener conversaciones:", error);
+    res.status(500).json({ error: "Error al obtener conversaciones" });
+  }
+});
+
+// 🧩 Eliminar conversación (y sus mensajes)
+app.delete("/api/conversations/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query("DELETE FROM fulltechuiconversation WHERE id = $1", [id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("⚠️ Error al eliminar conversación:", error);
+    res.status(500).json({ error: "Error al eliminar conversación" });
   }
 });
 
@@ -104,7 +134,9 @@ app.get("/api/messages/:conversation_id", async (req, res) => {
   }
 });
 
+// =========================
 // 🚀 Iniciar servidor
+// =========================
 const PORT = 8080;
 app.listen(PORT, async () => {
   await ensureTables();

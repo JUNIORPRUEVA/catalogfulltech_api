@@ -1,5 +1,5 @@
 // === API FULLTECH - Conversaciones con PostgreSQL ===
-// Junior López - FULLTECH SRL
+// Desarrollado por: Junior López - FULLTECH SRL
 
 import express from "express";
 import cors from "cors";
@@ -12,11 +12,11 @@ app.use(express.json());
 
 // 💾 Conexión directa a PostgreSQL (mismo servidor Easypanel)
 const pool = new Pool({
-  host: "postgresql_postgres-n8n",  // <-- nombre del servicio interno de tu PostgreSQL
+  host: "postgresql_postgres-n8n",  // Nombre interno del servicio PostgreSQL
   port: 5432,
-  database: "n8n",
-  user: "n8n_user",
-  password: "Ayleen10.yahaira",
+  database: "n8n",                  // Base de datos existente
+  user: "n8n_user",                 // Usuario del servicio PostgreSQL
+  password: "Ayleen10.yahaira",     // Contraseña del usuario
   ssl: false
 });
 
@@ -49,13 +49,59 @@ async function ensureTables() {
   }
 }
 
-// 🟢 Endpoint de prueba
+// 🟢 Ruta de prueba
 app.get("/", (req, res) => {
   res.send("🚀 API Conversaciones FULLTECH corriendo correctamente");
 });
 
+// 🟢 Verificación de estado
 app.get("/ping", (req, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
+});
+
+// 🧩 Crear conversación
+app.post("/api/conversations", async (req, res) => {
+  const { title } = req.body;
+  try {
+    const result = await pool.query(
+      "INSERT INTO fulltechuiconversation (title) VALUES ($1) RETURNING *",
+      [title || "Nueva conversación"]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("⚠️ Error al crear conversación:", error);
+    res.status(500).json({ error: "Error al crear conversación" });
+  }
+});
+
+// 🧩 Guardar mensaje
+app.post("/api/messages", async (req, res) => {
+  const { conversation_id, role, content } = req.body;
+  try {
+    await pool.query(
+      "INSERT INTO fulltechuimensage (conversation_id, role, content) VALUES ($1, $2, $3)",
+      [conversation_id, role, content]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error("⚠️ Error al guardar mensaje:", error);
+    res.status(500).json({ error: "Error al guardar mensaje" });
+  }
+});
+
+// 🧩 Obtener mensajes por conversación
+app.get("/api/messages/:conversation_id", async (req, res) => {
+  const { conversation_id } = req.params;
+  try {
+    const result = await pool.query(
+      "SELECT * FROM fulltechuimensage WHERE conversation_id = $1 ORDER BY created_at ASC",
+      [conversation_id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("⚠️ Error al obtener mensajes:", error);
+    res.status(500).json({ error: "Error al obtener mensajes" });
+  }
 });
 
 // 🚀 Iniciar servidor

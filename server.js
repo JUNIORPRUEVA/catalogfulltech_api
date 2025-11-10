@@ -1,115 +1,66 @@
-// === API FULLTECH - Catálogo de Productos ===
-// Junior Lopez - FULLTECH SRL
+// === API FULLTECH - Conversaciones con PostgreSQL ===
+// Junior López - FULLTECH SRL
 
 import express from "express";
-import pg from "pg";
 import cors from "cors";
+import pkg from "pg";
+const { Pool } = pkg;
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔗 Conexión a PostgreSQL (ajusta tus datos reales)
-const pool = new pg.Pool({
-  host: "gcdndd.easypanel.host",
+// 💾 Conexión directa a PostgreSQL (mismo servidor Easypanel)
+const pool = new Pool({
+  host: "postgresql_postgres-n8n",  // <-- nombre del servicio interno de tu PostgreSQL
   port: 5432,
+  database: "n8n",
   user: "n8n_user",
   password: "Ayleen10.yahaira",
-  database: "fulltechcatalog",
-  ssl: false,
+  ssl: false
 });
 
-// ✅ Ruta de prueba
+// 🧱 Crear tablas si no existen
+async function ensureTables() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+      CREATE TABLE IF NOT EXISTS fulltechuiconversation (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT DEFAULT 'Conversación Fulltech',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS fulltechuimensage (
+        id BIGSERIAL PRIMARY KEY,
+        conversation_id UUID REFERENCES fulltechuiconversation(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    console.log("✅ Tablas verificadas correctamente.");
+  } catch (err) {
+    console.error("❌ Error al crear/verificar tablas:", err);
+  } finally {
+    client.release();
+  }
+}
+
+// 🟢 Endpoint de prueba
 app.get("/", (req, res) => {
-  res.send("🚀 API FULLTECH Catalog corriendo correctamente");
+  res.send("🚀 API Conversaciones FULLTECH corriendo correctamente");
 });
 
-// ✅ Proxy para mostrar imágenes externas (con decodificación de URLs)
-app.get("/imagen", async (req, res) => {
-  try {
-    let imageUrl = req.query.url;
-    if (!imageUrl) return res.status(400).send("Falta el parámetro 'url'");
-
-    // 🔑 Solución: decodificar URL por si viene doblemente codificada
-    imageUrl = decodeURIComponent(imageUrl);
-
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      console.error("⚠️ Error al obtener imagen:", response.status, response.statusText);
-      return res.status(404).send("No se pudo obtener la imagen");
-    }
-
-    const contentType = response.headers.get("content-type");
-    const arrayBuffer = await response.arrayBuffer();
-
-    res.setHeader("Content-Type", contentType || "image/jpeg");
-    res.send(Buffer.from(arrayBuffer));
-  } catch (error) {
-    console.error("❌ Error al cargar imagen:", error);
-    res.status(500).send("Error al cargar imagen");
-  }
+app.get("/ping", (req, res) => {
+  res.json({ status: "✅ Servidor activo y corriendo correctamente" });
 });
 
-// ✅ Obtener todos los productos (con URLs proxificadas)
-app.get("/productos", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM productos ORDER BY id DESC");
-
-    const proxyBase = "https://api-catalogo-fulltech-flutterflow-api-catalogo-flutterflow.gcdndd.easypanel.host/imagen?url=";
-
-    const productos = result.rows.map((p) => {
-      const proxificar = (url) => {
-        if (!url) return null;
-        if (url.startsWith(proxyBase)) return url;
-        return proxyBase + encodeURIComponent(url);
-      };
-
-      return {
-        ...p,
-        imagen1: proxificar(p.imagen1),
-        imagen2: proxificar(p.imagen2),
-        imagen3: proxificar(p.imagen3),
-      };
-    });
-
-    res.json(productos);
-  } catch (error) {
-    console.error("❌ Error en /productos:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ✅ Buscar producto por ID (también con URLs proxificadas)
-app.get("/productos/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query("SELECT * FROM productos WHERE id = $1", [id]);
-
-    if (result.rows.length === 0)
-      return res.status(404).json({ error: "Producto no encontrado" });
-
-    const proxyBase = "https://api-catalogo-fulltech-flutterflow-api-catalogo-flutterflow.gcdndd.easypanel.host/imagen?url=";
-    const p = result.rows[0];
-
-    const proxificar = (url) => {
-      if (!url) return null;
-      if (url.startsWith(proxyBase)) return url;
-      return proxyBase + encodeURIComponent(url);
-    };
-
-    const producto = {
-      ...p,
-      imagen1: proxificar(p.imagen1),
-      imagen2: proxificar(p.imagen2),
-      imagen3: proxificar(p.imagen3),
-    };
-
-    res.json(producto);
-  } catch (error) {
-    console.error("❌ Error en /productos/:id:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
+// 🚀 Iniciar servidor
 const PORT = 8080;
-app.listen(PORT, () => console.log(`🔥 Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, async () => {
+  await ensureTables();
+  console.log(`🔥 Servidor corriendo en puerto ${PORT}`);
+});

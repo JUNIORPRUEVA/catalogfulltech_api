@@ -96,7 +96,7 @@ async function generarEmbedding(texto) {
 
     return data.data[0].embedding;
   } catch (error) {
-    console.error("❌ Error generando embedding:", error);
+    console.error("❌ Error generando embedding:", error.message);
     return [];
   }
 }
@@ -111,7 +111,7 @@ app.get("/ping", (req, res) => {
 });
 
 // Crear nueva conversación
-app.post("/api/conversations", async (req, res) => {
+app.post("/conversations", async (req, res) => {
   const { title } = req.body;
   try {
     const result = await pool.query(
@@ -128,7 +128,7 @@ app.post("/api/conversations", async (req, res) => {
 // =========================================================
 // 💬 Guardar mensaje con embedding vectorial
 // =========================================================
-app.post("/api/messages", async (req, res) => {
+app.post("/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
   try {
     if (!conversation_id || !content) {
@@ -163,7 +163,7 @@ app.post("/api/messages", async (req, res) => {
 // =========================================================
 // 📜 Obtener historial de conversación
 // =========================================================
-app.get("/api/messages/:conversation_id", async (req, res) => {
+app.get("/messages/:conversation_id", async (req, res) => {
   const { conversation_id } = req.params;
   try {
     const result = await pool.query(
@@ -180,7 +180,7 @@ app.get("/api/messages/:conversation_id", async (req, res) => {
 // =========================================================
 // 🔍 Búsqueda semántica (recuperar contexto relevante)
 // =========================================================
-app.post("/api/memory/search", async (req, res) => {
+app.post("/memory/search", async (req, res) => {
   const { conversation_id, embedding, limit = 5 } = req.body;
   try {
     const result = await pool.query(
@@ -202,9 +202,9 @@ app.post("/api/memory/search", async (req, res) => {
 });
 
 // =========================================================
-// 🤖 NUEVO ENDPOINT /api/chat (IA con memoria vectorial)
+// 🤖 NUEVO ENDPOINT /chat (IA con memoria vectorial)
 // =========================================================
-app.post("/api/chat", async (req, res) => {
+app.post("/chat", async (req, res) => {
   try {
     const { conversation_id, user_message } = req.body;
 
@@ -265,7 +265,8 @@ ${user_message}
     });
 
     const data = await response.json();
-    const assistant_message = data?.choices?.[0]?.message?.content || "Lo siento, no pude generar una respuesta.";
+    const assistant_message =
+      data?.choices?.[0]?.message?.content || "Lo siento, no pude generar una respuesta.";
 
     // 5️⃣ Guardar respuesta de la IA
     const aiEmbedding = await generarEmbedding(assistant_message);
@@ -279,14 +280,14 @@ ${user_message}
     // 6️⃣ Devolver respuesta al cliente
     res.json({
       success: true,
-      assistant_message,
+      reply: assistant_message,
       context_used: contextRows.length,
     });
 
     console.log(`🤖 Respuesta IA: ${assistant_message}`);
   } catch (error) {
-    console.error("❌ Error en /api/chat:", error.message);
-    res.status(500).json({ error: "Error interno en /api/chat", details: error.message });
+    console.error("❌ Error en /chat:", error.message);
+    res.status(500).json({ error: "Error interno en /chat", details: error.message });
   }
 });
 

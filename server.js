@@ -1,9 +1,9 @@
 // === API FULLTECH - Memoria Semántica de Conversaciones ===
-// Junior López - FULLTECH SRL
+// Desarrollado por Junior López - FULLTECH SRL
 
 import express from "express";
 import cors from "cors";
-import fetch from "node-fetch"; // ⚡ para llamadas a OpenAI
+import fetch from "node-fetch"; // ⚡ Para llamadas a OpenAI
 import pkg from "pg";
 const { Pool } = pkg;
 
@@ -11,22 +11,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 💾 Conexión PostgreSQL
+// =========================================================
+// 💾 Conexión PostgreSQL (ajustada al nombre real de la base)
+// =========================================================
 const pool = new Pool({
-  host: "postgresql_postgres-vector", // mismo host que usas en EasyPanel
+  host: "postgresql_postgres-vector", // nombre del servicio PostgreSQL en EasyPanel
   port: 5432,
-  database: "memoria vectorial", // 👈 aquí usa el nuevo nombre exacto
+  database: "memoria vectorial", // ✅ nombre exacto de la base existente
   user: "n8n_user",
   password: "Ayleen10.yahaira",
   ssl: false,
 });
 
 
-// 🔑 Clave de OpenAI (ahora viene de variable de entorno)
+// =========================================================
+// 🔑 Clave de OpenAI (usando variable de entorno)
+// =========================================================
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+if (!OPENAI_API_KEY) {
+  console.warn("⚠️ Advertencia: Falta la variable OPENAI_API_KEY en el entorno.");
+}
 
 // =========================================================
-// 🧩 CREACIÓN DE TABLAS (con soporte para embeddings vectoriales)
+// 🧩 Verificación y creación de tablas con soporte vectorial
 // =========================================================
 async function ensureTables() {
   const client = await pool.connect();
@@ -46,33 +53,29 @@ async function ensureTables() {
         conversation_id UUID REFERENCES fulltech_conversations(id) ON DELETE CASCADE,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
-        embedding VECTOR(1536), -- 🧠 memoria semántica
+        embedding VECTOR(1536),
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
-      -- ⚡ índice para búsqueda vectorial rápida
       CREATE INDEX IF NOT EXISTS idx_embedding_vector
       ON fulltech_messages
       USING ivfflat (embedding vector_l2_ops)
       WITH (lists = 100);
     `);
-    console.log("✅ Tablas verificadas correctamente (con vector).");
+    console.log("✅ Tablas verificadas y listas (con soporte vectorial).");
   } catch (err) {
-    console.error("❌ Error al crear/verificar tablas:", err);
+    console.error("❌ Error al crear/verificar tablas:", err.message);
   } finally {
     client.release();
   }
 }
 
 // =========================================================
-// 🧠 Función para generar embeddings (vector semántico)
+// 🧠 Generar Embeddings con OpenAI
 // =========================================================
 async function generarEmbedding(texto) {
   try {
-    if (!OPENAI_API_KEY) {
-      console.error("❌ ERROR: Falta la variable OPENAI_API_KEY en el entorno.");
-      return [];
-    }
+    if (!OPENAI_API_KEY) return [];
 
     const response = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
@@ -82,7 +85,7 @@ async function generarEmbedding(texto) {
       },
       body: JSON.stringify({
         input: texto,
-        model: "text-embedding-3-small", // ✅ modelo eficiente y económico
+        model: "text-embedding-3-small",
       }),
     });
 
@@ -118,13 +121,13 @@ app.post("/api/conversations", async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (err) {
-    console.error("⚠️ Error creando conversación:", err);
+    console.error("⚠️ Error creando conversación:", err.message);
     res.status(500).json({ error: "Error al crear conversación" });
   }
 });
 
 // =========================================================
-// 💬 GUARDAR MENSAJE con EMBEDDING SEMÁNTICO (VERSIÓN FINAL)
+// 💬 Guardar mensaje con embedding vectorial
 // =========================================================
 app.post("/api/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
@@ -133,15 +136,11 @@ app.post("/api/messages", async (req, res) => {
       return res.status(400).json({ error: "Faltan datos requeridos" });
     }
 
-    // 🧠 Genera vector de significado
     const embedding = await generarEmbedding(content);
-
-    // ⚙️ Convierte el array en formato compatible con pgvector
     const vector = Array.isArray(embedding) && embedding.length
       ? `[${embedding.join(",")}]`
       : null;
 
-    // 💾 Inserta el mensaje
     const query = vector
       ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding)
          VALUES ($1, $2, $3, $4::vector)`
@@ -157,14 +156,13 @@ app.post("/api/messages", async (req, res) => {
     console.log(`💾 Mensaje guardado (${role || "user"}): ${content}`);
     res.json({ success: true });
   } catch (err) {
-    console.error("⚠️ Error guardando mensaje:", err.message, err.stack);
-    res.status(500).json({ error: err.message });
+    console.error("⚠️ Error guardando mensaje:", err.message);
+    res.status(500).json({ error: "Error al guardar mensaje" });
   }
 });
 
-
 // =========================================================
-// 📜 OBTENER HISTORIAL DE UNA CONVERSACIÓN
+// 📜 Obtener historial de conversación
 // =========================================================
 app.get("/api/messages/:conversation_id", async (req, res) => {
   const { conversation_id } = req.params;
@@ -175,13 +173,13 @@ app.get("/api/messages/:conversation_id", async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error("⚠️ Error obteniendo mensajes:", err);
+    console.error("⚠️ Error obteniendo mensajes:", err.message);
     res.status(500).json({ error: "Error al obtener mensajes" });
   }
 });
 
 // =========================================================
-// 🔍 BÚSQUEDA SEMÁNTICA (recordar contexto por significado)
+// 🔍 Búsqueda semántica (recuperar contexto relevante)
 // =========================================================
 app.post("/api/memory/search", async (req, res) => {
   const { conversation_id, embedding, limit = 5 } = req.body;
@@ -199,13 +197,13 @@ app.post("/api/memory/search", async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error("⚠️ Error en búsqueda semántica:", err);
+    console.error("⚠️ Error en búsqueda semántica:", err.message);
     res.status(500).json({ error: "Error al buscar memoria" });
   }
 });
 
 // =========================================================
-// 🚀 INICIAR SERVIDOR
+// 🚀 Iniciar servidor
 // =========================================================
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, async () => {

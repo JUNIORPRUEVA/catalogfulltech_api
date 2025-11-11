@@ -13,13 +13,14 @@ app.use(express.json());
 
 // 💾 Conexión PostgreSQL
 const pool = new Pool({
-  host: "postgresql_postgres-n8n",
+  host: "postgresql_postgres-vector",  // 👈 usa la nueva
   port: 5432,
-  database: "n8n",
+  database: "vector_memory",           // 👈 crea este nombre para diferenciarla
   user: "n8n_user",
   password: "Ayleen10.yahaira",
   ssl: false,
 });
+
 
 // 🔑 Clave de OpenAI (ahora viene de variable de entorno)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;

@@ -124,7 +124,7 @@ app.post("/api/conversations", async (req, res) => {
 });
 
 // =========================================================
-// 💬 GUARDAR MENSAJE con EMBEDDING SEMÁNTICO (CORREGIDO)
+// 💬 GUARDAR MENSAJE con EMBEDDING SEMÁNTICO (VERSIÓN FINAL)
 // =========================================================
 app.post("/api/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
@@ -137,15 +137,24 @@ app.post("/api/messages", async (req, res) => {
     const embedding = await generarEmbedding(content);
 
     // ⚙️ Convierte el array en formato compatible con pgvector
-    const vector = embedding.length ? `[${embedding.join(",")}]` : null;
+    const vector = Array.isArray(embedding) && embedding.length
+      ? `[${embedding.join(",")}]`
+      : null;
 
-    // 💾 Guarda mensaje con vector correctamente
-    await pool.query(
-      "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
-      [conversation_id, role, content, vector]
-    );
+    // 💾 Inserta el mensaje
+    const query = vector
+      ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding)
+         VALUES ($1, $2, $3, $4::vector)`
+      : `INSERT INTO fulltech_messages (conversation_id, role, content)
+         VALUES ($1, $2, $3)`;
 
-    console.log("💾 Mensaje guardado correctamente:", role, "->", content);
+    const params = vector
+      ? [conversation_id, role || "user", content, vector]
+      : [conversation_id, role || "user", content];
+
+    await pool.query(query, params);
+
+    console.log(`💾 Mensaje guardado (${role || "user"}): ${content}`);
     res.json({ success: true });
   } catch (err) {
     console.error("⚠️ Error guardando mensaje:", err.message, err.stack);

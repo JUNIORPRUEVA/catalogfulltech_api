@@ -124,26 +124,35 @@ app.post("/api/conversations", async (req, res) => {
 });
 
 // =========================================================
-// 💬 GUARDAR MENSAJE con EMBEDDING SEMÁNTICO
+// 💬 GUARDAR MENSAJE con EMBEDDING SEMÁNTICO (CORREGIDO)
 // =========================================================
 app.post("/api/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
   try {
+    if (!conversation_id || !content) {
+      return res.status(400).json({ error: "Faltan datos requeridos" });
+    }
+
     // 🧠 Genera vector de significado
     const embedding = await generarEmbedding(content);
 
-    // 💾 Guarda mensaje con vector en la base
+    // ⚙️ Convierte el array en formato compatible con pgvector
+    const vector = embedding.length ? `[${embedding.join(",")}]` : null;
+
+    // 💾 Guarda mensaje con vector correctamente
     await pool.query(
-      "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4)",
-      [conversation_id, role, content, embedding]
+      "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
+      [conversation_id, role, content, vector]
     );
 
+    console.log("💾 Mensaje guardado correctamente:", role, "->", content);
     res.json({ success: true });
   } catch (err) {
-    console.error("⚠️ Error guardando mensaje:", err);
-    res.status(500).json({ error: "Error al guardar mensaje" });
+    console.error("⚠️ Error guardando mensaje:", err.message, err.stack);
+    res.status(500).json({ error: err.message });
   }
 });
+
 
 // =========================================================
 // 📜 OBTENER HISTORIAL DE UNA CONVERSACIÓN

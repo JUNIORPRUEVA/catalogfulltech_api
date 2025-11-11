@@ -17,7 +17,7 @@ app.use(express.json());
 const pool = new Pool({
   host: "postgresql_postgres-vector", // nombre del servicio PostgreSQL en EasyPanel
   port: 5432,
-  database: "memoria vectorial", // ✅ nombre exacto de la base existente
+  database: "vector_memory", // ✅ nombre exacto de la base existente
   user: "n8n_user",
   password: "Ayleen10.yahaira",
   ssl: false,

@@ -1,5 +1,6 @@
-// === API FULLTECH - Memoria Semántica Inteligente ===
-// Desarrollado por Junior López - FULLTECH SRL
+// ===========================================================
+// 🧠 FULLTECH AI SERVER - BASE VECTORIAL SIN /chat
+// ===========================================================
 
 import express from "express";
 import cors from "cors";
@@ -11,7 +12,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Conexión PostgreSQL
+// ===========================================================
+// 🔌 CONEXIÓN A POSTGRES VECTORIAL
+// ===========================================================
 const pool = new Pool({
   host: "postgresql_postgres-vector",
   port: 5432,
@@ -21,13 +24,17 @@ const pool = new Pool({
   ssl: false,
 });
 
-// Clave de OpenAI (variable de entorno)
+// ===========================================================
+// 🔑 CLAVE DE OPENAI
+// ===========================================================
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_API_KEY) {
   console.warn("⚠️ Falta la variable OPENAI_API_KEY en el entorno.");
 }
 
-// Crear tablas si no existen
+// ===========================================================
+// 🧱 CREAR TABLAS SI NO EXISTEN
+// ===========================================================
 async function ensureTables() {
   const client = await pool.connect();
   try {
@@ -61,6 +68,9 @@ async function ensureTables() {
   }
 }
 
+// ===========================================================
+// 🔡 FUNCIÓN PARA GENERAR EMBEDDING
+// ===========================================================
 async function generarEmbedding(texto) {
   try {
     if (!OPENAI_API_KEY) return [];
@@ -70,7 +80,10 @@ async function generarEmbedding(texto) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
-      body: JSON.stringify({ input: texto, model: "text-embedding-3-small" }),
+      body: JSON.stringify({
+        input: texto,
+        model: "text-embedding-3-small",
+      }),
     });
     const data = await response.json();
     return data?.data?.[0]?.embedding || [];
@@ -80,11 +93,51 @@ async function generarEmbedding(texto) {
   }
 }
 
-// Rutas básicas
+// ===========================================================
+// 🧠 MINI RAZONAMIENTO (simula pensamiento interno de la IA)
+// ===========================================================
+async function reflexionar(prompt) {
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "Eres un motor de razonamiento interno. Responde de forma breve y lógica, sin emociones.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 150,
+      }),
+    });
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content || "Sin reflexión interna.";
+  } catch (e) {
+    console.error("⚠️ Error en reflexión interna:", e.message);
+    return "No se pudo razonar internamente.";
+  }
+}
+
+// ===========================================================
+// 🚀 ENDPOINTS BÁSICOS
+// ===========================================================
+
+// 🔹 Test
 app.get("/ping", (req, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
 });
 
+// 🔹 Crear conversación
 app.post("/conversations", async (req, res) => {
   const { title } = req.body;
   const result = await pool.query(
@@ -94,23 +147,39 @@ app.post("/conversations", async (req, res) => {
   res.json(result.rows[0]);
 });
 
+// 🔹 Guardar mensaje
 app.post("/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
+
   if (!conversation_id || !content) {
     return res.status(400).json({ error: "Faltan datos requeridos" });
   }
+
   const embedding = await generarEmbedding(content);
   const vector = embedding.length ? `[${embedding.join(",")}]` : null;
+
   const query = vector
-    ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)`
-    : `INSERT INTO fulltech_messages (conversation_id, role, content) VALUES ($1, $2, $3)`;
+    ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding)
+       VALUES ($1, $2, $3, $4::vector)`
+    : `INSERT INTO fulltech_messages (conversation_id, role, content)
+       VALUES ($1, $2, $3)`;
+
   const params = vector
     ? [conversation_id, role || "user", content, vector]
     : [conversation_id, role || "user", content];
+
   await pool.query(query, params);
+
+  // 🧩 Reflexión interna (pensamiento del bot)
+  if (role === "assistant") {
+    const pensamiento = await reflexionar(content);
+    console.log("💭 Pensamiento interno:", pensamiento);
+  }
+
   res.json({ success: true });
 });
 
+// 🔹 Obtener mensajes
 app.get("/messages/:conversation_id", async (req, res) => {
   const { conversation_id } = req.params;
   const result = await pool.query(
@@ -120,6 +189,7 @@ app.get("/messages/:conversation_id", async (req, res) => {
   res.json(result.rows);
 });
 
+// 🔹 Buscar mensajes similares
 app.post("/memory/search", async (req, res) => {
   const { conversation_id, embedding, limit = 5 } = req.body;
   const result = await pool.query(
@@ -136,70 +206,11 @@ app.post("/memory/search", async (req, res) => {
   res.json(result.rows);
 });
 
-app.post("/chat", async (req, res) => {
-  const { conversation_id, user_message } = req.body;
-  if (!conversation_id || !user_message) {
-    return res.status(400).json({ error: "Faltan datos requeridos" });
-  }
-  // Guarda mensaje del usuario
-  const embUser = await generarEmbedding(user_message);
-  const vecUser = `[${embUser.join(",")}]`;
-  await pool.query(
-    "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, 'user', $2, $3::vector)",
-    [conversation_id, user_message, vecUser]
-  );
-  // Busca contexto
-  const { rows: contextRows } = await pool.query(
-    `
-    SELECT content
-    FROM fulltech_messages
-    WHERE conversation_id = $1 AND embedding IS NOT NULL
-    ORDER BY embedding <-> $2::vector
-    LIMIT 5
-    `,
-    [conversation_id, vecUser]
-  );
-  const context = contextRows.map(r => r.content).join("\n");
-  // Construye prompt y llama a OpenAI
-  const prompt = `
-Eres Fulltech AI, un asistente técnico y vendedor de Fulltech SRL.
-Responde de forma clara y profesional.
-
-Contexto previo:
-${context}
-
-Usuario dice:
-${user_message}
-`;
-  const chatResp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "Eres Fulltech AI." },
-        { role: "user", content: prompt },
-      ],
-    }),
-  });
-  const data = await chatResp.json();
-  const assistant_message = data?.choices?.[0]?.message?.content || "Lo siento, no pude generar una respuesta.";
-  // Guarda respuesta de IA
-  const embAI = await generarEmbedding(assistant_message);
-  const vecAI = `[${embAI.join(",")}]`;
-  await pool.query(
-    "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, 'assistant', $2, $3::vector)",
-    [conversation_id, assistant_message, vecAI]
-  );
-  res.json({ success: true, reply: assistant_message });
-});
-
-// Inicia servidor
+// ===========================================================
+// 🟢 INICIAR SERVIDOR
+// ===========================================================
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, async () => {
   await ensureTables();
-  console.log(`🔥 Servidor corriendo en puerto ${PORT}`);
+  console.log(`🔥 Servidor corriendo con memoria vectorial en puerto ${PORT}`);
 });

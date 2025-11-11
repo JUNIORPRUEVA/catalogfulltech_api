@@ -1,8 +1,9 @@
-// === API FULLTECH - Memoria de conversaciones ===
+// === API FULLTECH - Memoria Semántica de Conversaciones ===
 // Junior López - FULLTECH SRL
 
 import express from "express";
 import cors from "cors";
+import fetch from "node-fetch"; // ⚡ para llamadas a OpenAI
 import pkg from "pg";
 const { Pool } = pkg;
 
@@ -20,12 +21,18 @@ const pool = new Pool({
   ssl: false,
 });
 
-// ✅ Crear tablas si no existen
+// 🔑 Clave de OpenAI (ahora viene de variable de entorno)
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+// =========================================================
+// 🧩 CREACIÓN DE TABLAS (con soporte para embeddings vectoriales)
+// =========================================================
 async function ensureTables() {
   const client = await pool.connect();
   try {
     await client.query(`
       CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+      CREATE EXTENSION IF NOT EXISTS "vector";
 
       CREATE TABLE IF NOT EXISTS fulltech_conversations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -38,10 +45,17 @@ async function ensureTables() {
         conversation_id UUID REFERENCES fulltech_conversations(id) ON DELETE CASCADE,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        embedding VECTOR(1536), -- 🧠 memoria semántica
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      -- ⚡ índice para búsqueda vectorial rápida
+      CREATE INDEX IF NOT EXISTS idx_embedding_vector
+      ON fulltech_messages
+      USING ivfflat (embedding vector_l2_ops)
+      WITH (lists = 100);
     `);
-    console.log("✅ Tablas verificadas correctamente.");
+    console.log("✅ Tablas verificadas correctamente (con vector).");
   } catch (err) {
     console.error("❌ Error al crear/verificar tablas:", err);
   } finally {
@@ -49,7 +63,44 @@ async function ensureTables() {
   }
 }
 
-// 🟢 ENDPOINTS
+// =========================================================
+// 🧠 Función para generar embeddings (vector semántico)
+// =========================================================
+async function generarEmbedding(texto) {
+  try {
+    if (!OPENAI_API_KEY) {
+      console.error("❌ ERROR: Falta la variable OPENAI_API_KEY en el entorno.");
+      return [];
+    }
+
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        input: texto,
+        model: "text-embedding-3-small", // ✅ modelo eficiente y económico
+      }),
+    });
+
+    const data = await response.json();
+    if (!data?.data?.[0]?.embedding) {
+      console.error("⚠️ Respuesta inesperada de OpenAI:", data);
+      return [];
+    }
+
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error("❌ Error generando embedding:", error);
+    return [];
+  }
+}
+
+// =========================================================
+// 🟢 ENDPOINTS BÁSICOS
+// =========================================================
 
 // Ruta de prueba
 app.get("/ping", (req, res) => {
@@ -71,14 +122,21 @@ app.post("/api/conversations", async (req, res) => {
   }
 });
 
-// Guardar mensaje
+// =========================================================
+// 💬 GUARDAR MENSAJE con EMBEDDING SEMÁNTICO
+// =========================================================
 app.post("/api/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
   try {
+    // 🧠 Genera vector de significado
+    const embedding = await generarEmbedding(content);
+
+    // 💾 Guarda mensaje con vector en la base
     await pool.query(
-      "INSERT INTO fulltech_messages (conversation_id, role, content) VALUES ($1, $2, $3)",
-      [conversation_id, role, content]
+      "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4)",
+      [conversation_id, role, content, embedding]
     );
+
     res.json({ success: true });
   } catch (err) {
     console.error("⚠️ Error guardando mensaje:", err);
@@ -86,7 +144,9 @@ app.post("/api/messages", async (req, res) => {
   }
 });
 
-// Obtener mensajes por conversación
+// =========================================================
+// 📜 OBTENER HISTORIAL DE UNA CONVERSACIÓN
+// =========================================================
 app.get("/api/messages/:conversation_id", async (req, res) => {
   const { conversation_id } = req.params;
   try {
@@ -101,9 +161,35 @@ app.get("/api/messages/:conversation_id", async (req, res) => {
   }
 });
 
-// 🚀 Iniciar servidor
-const PORT = 8080;
+// =========================================================
+// 🔍 BÚSQUEDA SEMÁNTICA (recordar contexto por significado)
+// =========================================================
+app.post("/api/memory/search", async (req, res) => {
+  const { conversation_id, embedding, limit = 5 } = req.body;
+  try {
+    const result = await pool.query(
+      `
+        SELECT role, content, created_at
+        FROM fulltech_messages
+        WHERE conversation_id = $1
+        AND embedding IS NOT NULL
+        ORDER BY embedding <-> $2
+        LIMIT $3
+      `,
+      [conversation_id, embedding, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("⚠️ Error en búsqueda semántica:", err);
+    res.status(500).json({ error: "Error al buscar memoria" });
+  }
+});
+
+// =========================================================
+// 🚀 INICIAR SERVIDOR
+// =========================================================
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, async () => {
   await ensureTables();
-  console.log(`🔥 Servidor corriendo en puerto ${PORT}`);
+  console.log(`🔥 Servidor corriendo con memoria vectorial en puerto ${PORT}`);
 });

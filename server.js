@@ -1,10 +1,9 @@
-// ===========================================================
-// 🧠 FULLTECH AI SERVER - BASE VECTORIAL SIN /chat
-// ===========================================================
+// === API FULLTECH - Memoria Semántica de Conversaciones ===
+// Desarrollado por Junior López - FULLTECH SRL
 
 import express from "express";
 import cors from "cors";
-import fetch from "node-fetch";
+import fetch from "node-fetch"; // ⚡ Para llamadas a OpenAI
 import pkg from "pg";
 const { Pool } = pkg;
 
@@ -12,29 +11,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ===========================================================
-// 🔌 CONEXIÓN A POSTGRES VECTORIAL
-// ===========================================================
+// =========================================================
+// 💾 Conexión PostgreSQL (ajustada al nombre real de la base)
+// =========================================================
 const pool = new Pool({
-  host: "postgresql_postgres-vector",
+  host: "postgresql_postgres-vector", // nombre del servicio PostgreSQL en EasyPanel
   port: 5432,
-  database: "vector_memory",
+  database: "vector_memory", // ✅ nombre exacto de la base existente
   user: "n8n_user",
   password: "Ayleen10.yahaira",
   ssl: false,
 });
 
-// ===========================================================
-// 🔑 CLAVE DE OPENAI
-// ===========================================================
+
+// =========================================================
+// 🔑 Clave de OpenAI (usando variable de entorno)
+// =========================================================
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_API_KEY) {
-  console.warn("⚠️ Falta la variable OPENAI_API_KEY en el entorno.");
+  console.warn("⚠️ Advertencia: Falta la variable OPENAI_API_KEY en el entorno.");
 }
 
-// ===========================================================
-// 🧱 CREAR TABLAS SI NO EXISTEN
-// ===========================================================
+// =========================================================
+// 🧩 Verificación y creación de tablas con soporte vectorial
+// =========================================================
 async function ensureTables() {
   const client = await pool.connect();
   try {
@@ -63,17 +63,20 @@ async function ensureTables() {
       WITH (lists = 100);
     `);
     console.log("✅ Tablas verificadas y listas (con soporte vectorial).");
+  } catch (err) {
+    console.error("❌ Error al crear/verificar tablas:", err.message);
   } finally {
     client.release();
   }
 }
 
-// ===========================================================
-// 🔡 FUNCIÓN PARA GENERAR EMBEDDING
-// ===========================================================
+// =========================================================
+// 🧠 Generar Embeddings con OpenAI
+// =========================================================
 async function generarEmbedding(texto) {
   try {
     if (!OPENAI_API_KEY) return [];
+
     const response = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
@@ -85,130 +88,123 @@ async function generarEmbedding(texto) {
         model: "text-embedding-3-small",
       }),
     });
+
     const data = await response.json();
-    return data?.data?.[0]?.embedding || [];
-  } catch (err) {
-    console.error("❌ Error generando embedding:", err.message);
+    if (!data?.data?.[0]?.embedding) {
+      console.error("⚠️ Respuesta inesperada de OpenAI:", data);
+      return [];
+    }
+
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error("❌ Error generando embedding:", error);
     return [];
   }
 }
 
-// ===========================================================
-// 🧠 MINI RAZONAMIENTO (simula pensamiento interno de la IA)
-// ===========================================================
-async function reflexionar(prompt) {
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "Eres un motor de razonamiento interno. Responde de forma breve y lógica, sin emociones.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 150,
-      }),
-    });
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "Sin reflexión interna.";
-  } catch (e) {
-    console.error("⚠️ Error en reflexión interna:", e.message);
-    return "No se pudo razonar internamente.";
-  }
-}
+// =========================================================
+// 🟢 ENDPOINTS BÁSICOS
+// =========================================================
 
-// ===========================================================
-// 🚀 ENDPOINTS BÁSICOS
-// ===========================================================
-
-// 🔹 Test
+// Ruta de prueba
 app.get("/ping", (req, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
 });
 
-// 🔹 Crear conversación
-app.post("/conversations", async (req, res) => {
+// Crear nueva conversación
+app.post("/api/conversations", async (req, res) => {
   const { title } = req.body;
-  const result = await pool.query(
-    "INSERT INTO fulltech_conversations (title) VALUES ($1) RETURNING *",
-    [title || "Nueva conversación"]
-  );
-  res.json(result.rows[0]);
+  try {
+    const result = await pool.query(
+      "INSERT INTO fulltech_conversations (title) VALUES ($1) RETURNING *",
+      [title || "Nueva conversación"]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("⚠️ Error creando conversación:", err.message);
+    res.status(500).json({ error: "Error al crear conversación" });
+  }
 });
 
-// 🔹 Guardar mensaje
-app.post("/messages", async (req, res) => {
+// =========================================================
+// 💬 Guardar mensaje con embedding vectorial
+// =========================================================
+app.post("/api/messages", async (req, res) => {
   const { conversation_id, role, content } = req.body;
+  try {
+    if (!conversation_id || !content) {
+      return res.status(400).json({ error: "Faltan datos requeridos" });
+    }
 
-  if (!conversation_id || !content) {
-    return res.status(400).json({ error: "Faltan datos requeridos" });
+    const embedding = await generarEmbedding(content);
+    const vector = Array.isArray(embedding) && embedding.length
+      ? `[${embedding.join(",")}]`
+      : null;
+
+    const query = vector
+      ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding)
+         VALUES ($1, $2, $3, $4::vector)`
+      : `INSERT INTO fulltech_messages (conversation_id, role, content)
+         VALUES ($1, $2, $3)`;
+
+    const params = vector
+      ? [conversation_id, role || "user", content, vector]
+      : [conversation_id, role || "user", content];
+
+    await pool.query(query, params);
+
+    console.log(`💾 Mensaje guardado (${role || "user"}): ${content}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("⚠️ Error guardando mensaje:", err.message);
+    res.status(500).json({ error: "Error al guardar mensaje" });
   }
-
-  const embedding = await generarEmbedding(content);
-  const vector = embedding.length ? `[${embedding.join(",")}]` : null;
-
-  const query = vector
-    ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding)
-       VALUES ($1, $2, $3, $4::vector)`
-    : `INSERT INTO fulltech_messages (conversation_id, role, content)
-       VALUES ($1, $2, $3)`;
-
-  const params = vector
-    ? [conversation_id, role || "user", content, vector]
-    : [conversation_id, role || "user", content];
-
-  await pool.query(query, params);
-
-  // 🧩 Reflexión interna (pensamiento del bot)
-  if (role === "assistant") {
-    const pensamiento = await reflexionar(content);
-    console.log("💭 Pensamiento interno:", pensamiento);
-  }
-
-  res.json({ success: true });
 });
 
-// 🔹 Obtener mensajes
-app.get("/messages/:conversation_id", async (req, res) => {
+// =========================================================
+// 📜 Obtener historial de conversación
+// =========================================================
+app.get("/api/messages/:conversation_id", async (req, res) => {
   const { conversation_id } = req.params;
-  const result = await pool.query(
-    "SELECT * FROM fulltech_messages WHERE conversation_id = $1 ORDER BY created_at ASC",
-    [conversation_id]
-  );
-  res.json(result.rows);
+  try {
+    const result = await pool.query(
+      "SELECT * FROM fulltech_messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+      [conversation_id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("⚠️ Error obteniendo mensajes:", err.message);
+    res.status(500).json({ error: "Error al obtener mensajes" });
+  }
 });
 
-// 🔹 Buscar mensajes similares
-app.post("/memory/search", async (req, res) => {
+// =========================================================
+// 🔍 Búsqueda semántica (recuperar contexto relevante)
+// =========================================================
+app.post("/api/memory/search", async (req, res) => {
   const { conversation_id, embedding, limit = 5 } = req.body;
-  const result = await pool.query(
-    `
-      SELECT role, content, created_at
-      FROM fulltech_messages
-      WHERE conversation_id = $1
-      AND embedding IS NOT NULL
-      ORDER BY embedding <-> $2
-      LIMIT $3
-    `,
-    [conversation_id, embedding, limit]
-  );
-  res.json(result.rows);
+  try {
+    const result = await pool.query(
+      `
+        SELECT role, content, created_at
+        FROM fulltech_messages
+        WHERE conversation_id = $1
+        AND embedding IS NOT NULL
+        ORDER BY embedding <-> $2
+        LIMIT $3
+      `,
+      [conversation_id, embedding, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("⚠️ Error en búsqueda semántica:", err.message);
+    res.status(500).json({ error: "Error al buscar memoria" });
+  }
 });
 
-// ===========================================================
-// 🟢 INICIAR SERVIDOR
-// ===========================================================
+// =========================================================
+// 🚀 Iniciar servidor
+// =========================================================
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, async () => {
   await ensureTables();

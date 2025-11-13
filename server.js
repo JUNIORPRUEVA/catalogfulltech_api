@@ -32,7 +32,7 @@ if (!OPENAI_API_KEY) {
 }
 
 // =========================================================
-// 🧩 Verificación de tablas
+// 🧩 Verificación de tablas (crea si no existen)
 // =========================================================
 async function ensureTables() {
   const client = await pool.connect();
@@ -75,15 +75,18 @@ async function ensureTables() {
 async function generarEmbedding(texto) {
   try {
     if (!OPENAI_API_KEY) return [];
-    const r = await fetch("https://api.openai.com/v1/embeddings", {
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
-      body: JSON.stringify({ input: texto, model: "text-embedding-3-small" }),
+      body: JSON.stringify({
+        input: texto,
+        model: "text-embedding-3-small",
+      }),
     });
-    const data = await r.json();
+    const data = await response.json();
     return data?.data?.[0]?.embedding || [];
   } catch (err) {
     console.error("❌ Error generando embedding:", err.message);
@@ -94,10 +97,22 @@ async function generarEmbedding(texto) {
 // =========================================================
 // 🟢 ENDPOINTS BÁSICOS
 // =========================================================
+
+// 🩵 Ruta de prueba
 app.get("/ping", (_, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
 });
 
+// 🩵 Endpoint adicional /status (útil para probar proxy externo)
+app.get("/status", (_, res) => {
+  res.json({
+    server: "✅ API FULLTECH - Online",
+    version: "1.0.0",
+    message: "Servidor funcional y aceptando peticiones.",
+  });
+});
+
+// 🩵 Crear nueva conversación
 app.post("/conversations", async (req, res) => {
   try {
     const { title } = req.body;
@@ -112,6 +127,7 @@ app.post("/conversations", async (req, res) => {
   }
 });
 
+// 🩵 Guardar mensaje con embedding
 app.post("/messages", async (req, res) => {
   try {
     const { conversation_id, role, content } = req.body;
@@ -120,16 +136,18 @@ app.post("/messages", async (req, res) => {
 
     const emb = await generarEmbedding(content);
     const vec = emb.length ? `[${emb.join(",")}]` : null;
-    const q = vec
+
+    const query = vec
       ? `INSERT INTO fulltech_messages (conversation_id, role, content, embedding)
          VALUES ($1, $2, $3, $4::vector)`
       : `INSERT INTO fulltech_messages (conversation_id, role, content)
          VALUES ($1, $2, $3)`;
+
     const params = vec
       ? [conversation_id, role || "user", content, vec]
       : [conversation_id, role || "user", content];
 
-    await pool.query(q, params);
+    await pool.query(query, params);
     res.json({ success: true });
   } catch (err) {
     console.error("⚠️ Error guardando mensaje:", err.message);
@@ -137,9 +155,7 @@ app.post("/messages", async (req, res) => {
   }
 });
 
-// =========================================================
-// 📜 Obtener historial de conversación
-// =========================================================
+// 🩵 Obtener historial de conversación
 app.get("/messages/:conversation_id", async (req, res) => {
   try {
     const r = await pool.query(
@@ -148,13 +164,12 @@ app.get("/messages/:conversation_id", async (req, res) => {
     );
     res.json(r.rows);
   } catch (err) {
+    console.error("⚠️ Error obteniendo mensajes:", err.message);
     res.status(500).json({ error: "Error obteniendo mensajes" });
   }
 });
 
-// =========================================================
-// 🔍 Búsqueda semántica
-// =========================================================
+// 🩵 Búsqueda semántica
 app.post("/memory/search", async (req, res) => {
   try {
     const { conversation_id, embedding, limit = 5 } = req.body;
@@ -167,7 +182,8 @@ app.post("/memory/search", async (req, res) => {
     );
     res.json(r.rows);
   } catch (err) {
-    res.status(500).json({ error: "Error búsqueda semántica" });
+    console.error("⚠️ Error en búsqueda semántica:", err.message);
+    res.status(500).json({ error: "Error en búsqueda semántica" });
   }
 });
 

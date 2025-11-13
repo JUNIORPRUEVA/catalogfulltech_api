@@ -174,7 +174,7 @@ app.post("/memory/search", async (req, res) => {
 // =========================================================
 // 🚀 Iniciar servidor
 // =========================================================
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 9090;
 app.listen(PORT, "0.0.0.0", async () => {
   await ensureTables();
   console.log(`🔥 Servidor corriendo correctamente en puerto ${PORT}`);

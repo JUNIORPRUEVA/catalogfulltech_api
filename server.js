@@ -95,7 +95,7 @@ async function generarEmbedding(texto) {
 }
 
 // =========================================================
-// 🧠 Generar respuesta con contexto de memoria
+// 🤖 Generar respuesta IA con memoria contextual
 // =========================================================
 async function generarRespuestaIA(pregunta, recuerdos) {
   const contexto =
@@ -104,14 +104,21 @@ async function generarRespuestaIA(pregunta, recuerdos) {
       : "Sin recuerdos previos relevantes.";
 
   const prompt = `
-Eres Fulltech AI Dev 🧠, un asistente profesional que ayuda a Junior López en el desarrollo de software y automatizaciones.
+Eres Fulltech AI Dev 🧠, un asistente profesional y técnico creado por Junior López.
+Tu tarea es recordar información relevante de la conversación y responder de forma natural y precisa.
 
-Contexto de conversación previa:
+=== CONTEXTO RELEVANTE ===
 ${contexto}
 
+=== MENSAJE ACTUAL ===
 Usuario: ${pregunta}
-Asistente:
-`;
+
+=== INSTRUCCIONES ===
+- Si el usuario menciona un nombre, recuerda ese nombre en futuras respuestas.
+- Si el usuario pregunta algo relacionado con información previa, usa los recuerdos para responder.
+- No digas "no tengo memoria" si el dato está en el contexto.
+- Mantén un tono amable, profesional y natural.
+  `;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -121,7 +128,10 @@ Asistente:
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: "Eres un asistente técnico inteligente de Fulltech SRL." },
+        { role: "user", content: prompt },
+      ],
       temperature: 0.7,
     }),
   });
@@ -131,7 +141,7 @@ Asistente:
 }
 
 // =========================================================
-// 🟢 ENDPOINTS BÁSICOS
+// 🟢 ENDPOINTS BASE
 // =========================================================
 app.get("/ping", (_, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
@@ -146,8 +156,19 @@ app.post("/conversations", async (req, res) => {
     );
     res.json(r.rows[0]);
   } catch (err) {
-    console.error("⚠️ Error creando conversación:", err.message);
     res.status(500).json({ error: "Error creando conversación" });
+  }
+});
+
+app.get("/messages/:conversation_id", async (req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT * FROM fulltech_messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+      [req.params.conversation_id]
+    );
+    res.json(r.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Error obteniendo mensajes" });
   }
 });
 
@@ -173,86 +194,57 @@ app.post("/messages", async (req, res) => {
     await pool.query(query, params);
     res.json({ success: true });
   } catch (err) {
-    console.error("⚠️ Error guardando mensaje:", err.message);
     res.status(500).json({ error: "Error guardando mensaje" });
   }
 });
 
-app.get("/messages/:conversation_id", async (req, res) => {
-  try {
-    const r = await pool.query(
-      "SELECT * FROM fulltech_messages WHERE conversation_id = $1 ORDER BY created_at ASC",
-      [req.params.conversation_id]
-    );
-    res.json(r.rows);
-  } catch (err) {
-    console.error("⚠️ Error obteniendo mensajes:", err.message);
-    res.status(500).json({ error: "Error obteniendo mensajes" });
-  }
-});
-
-app.post("/memory/search", async (req, res) => {
-  try {
-    const { conversation_id, embedding, limit = 5 } = req.body;
-    const r = await pool.query(
-      `SELECT role, content, created_at
-       FROM fulltech_messages
-       WHERE conversation_id = $1 AND embedding IS NOT NULL
-       ORDER BY embedding <-> $2 LIMIT $3`,
-      [conversation_id, embedding, limit]
-    );
-    res.json(r.rows);
-  } catch (err) {
-    console.error("⚠️ Error en búsqueda semántica:", err.message);
-    res.status(500).json({ error: "Error en búsqueda semántica" });
-  }
-});
-
 // =========================================================
-// 💬 Endpoint inteligente: CHAT CON MEMORIA REAL
+// 💬 CHAT COMPLETO CON MEMORIA SEMÁNTICA
 // =========================================================
 app.post("/chat", async (req, res) => {
   try {
     const { conversation_id, user_message } = req.body;
-
     if (!conversation_id || !user_message)
-      return res.status(400).json({ error: "Faltan datos requeridos." });
+      return res.status(400).json({ success: false, error: "Faltan datos requeridos." });
 
-    // 1️⃣ Generar embedding de la pregunta
-    const emb = await generarEmbedding(user_message);
+    // 1️⃣ Generar embedding del mensaje actual
+    const embUsuario = await generarEmbedding(user_message);
 
-    // 2️⃣ Buscar recuerdos relevantes
+    // 2️⃣ Buscar recuerdos relevantes (5 más cercanos)
     const recuerdosRes = await pool.query(
       `SELECT role, content FROM fulltech_messages
        WHERE conversation_id = $1 AND embedding IS NOT NULL
        ORDER BY embedding <-> $2 LIMIT 5`,
-      [conversation_id, emb]
+      [conversation_id, embUsuario]
     );
     const recuerdos = recuerdosRes.rows;
 
-    // 3️⃣ Generar respuesta con esos recuerdos
+    // 3️⃣ Generar respuesta IA con esos recuerdos
     const respuestaIA = await generarRespuestaIA(user_message, recuerdos);
 
-    // 4️⃣ Guardar mensaje del usuario y del asistente
+    // 4️⃣ Guardar mensaje del usuario
     await pool.query(
       "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
-      [conversation_id, "user", user_message, `[${emb.join(",")}]`]
+      [conversation_id, "user", user_message, `[${embUsuario.join(",")}]`]
     );
 
-    const embAsistente = await generarEmbedding(respuestaIA);
+    // 5️⃣ Guardar mensaje de la IA
+    const embIA = await generarEmbedding(respuestaIA);
     await pool.query(
       "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
-      [conversation_id, "assistant", respuestaIA, `[${embAsistente.join(",")}]`]
+      [conversation_id, "assistant", respuestaIA, `[${embIA.join(",")}]`]
     );
 
+    // 6️⃣ Enviar respuesta al cliente
     res.json({
       success: true,
       assistant_message: respuestaIA,
       recuerdos_usados: recuerdos.length,
     });
+
   } catch (err) {
-    console.error("⚠️ Error en /chat:", err.message);
-    res.status(500).json({ error: "Error procesando conversación." });
+    console.error("❌ Error en /chat:", err.message);
+    res.status(500).json({ success: false, error: "Error procesando conversación." });
   }
 });
 

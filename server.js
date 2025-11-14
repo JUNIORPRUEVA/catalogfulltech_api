@@ -74,7 +74,10 @@ async function ensureTables() {
 // =========================================================
 async function generarEmbedding(texto) {
   try {
-    if (!OPENAI_API_KEY) return [];
+    if (!OPENAI_API_KEY) {
+      console.error("⚠️ No hay OPENAI_API_KEY configurada.");
+      return [];
+    }
     const response = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
@@ -86,8 +89,13 @@ async function generarEmbedding(texto) {
         model: "text-embedding-3-small",
       }),
     });
+
     const data = await response.json();
-    return data?.data?.[0]?.embedding || [];
+    if (!data?.data?.[0]?.embedding) {
+      console.error("⚠️ Embedding vacío o error:", data);
+      return [];
+    }
+    return data.data[0].embedding;
   } catch (err) {
     console.error("❌ Error generando embedding:", err.message);
     return [];
@@ -120,24 +128,35 @@ Usuario: ${pregunta}
 - Mantén un tono amable, profesional y natural.
   `;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "Eres un asistente técnico inteligente de Fulltech SRL." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.7,
-    }),
-  });
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Eres un asistente técnico inteligente de Fulltech SRL." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+      }),
+    });
 
-  const data = await response.json();
-  return data?.choices?.[0]?.message?.content || "No pude generar respuesta.";
+    const data = await response.json();
+
+    if (!data?.choices?.[0]?.message?.content) {
+      console.error("⚠️ Respuesta inválida de OpenAI:", data);
+      return "No pude generar respuesta por un error interno.";
+    }
+
+    return data.choices[0].message.content.trim();
+  } catch (err) {
+    console.error("❌ Error generando respuesta IA:", err.message);
+    return "Error generando respuesta desde OpenAI.";
+  }
 }
 
 // =========================================================
@@ -156,6 +175,7 @@ app.post("/conversations", async (req, res) => {
     );
     res.json(r.rows[0]);
   } catch (err) {
+    console.error("❌ Error creando conversación:", err.message);
     res.status(500).json({ error: "Error creando conversación" });
   }
 });
@@ -168,6 +188,7 @@ app.get("/messages/:conversation_id", async (req, res) => {
     );
     res.json(r.rows);
   } catch (err) {
+    console.error("❌ Error obteniendo mensajes:", err.message);
     res.status(500).json({ error: "Error obteniendo mensajes" });
   }
 });
@@ -194,57 +215,74 @@ app.post("/messages", async (req, res) => {
     await pool.query(query, params);
     res.json({ success: true });
   } catch (err) {
+    console.error("❌ Error guardando mensaje:", err.message);
     res.status(500).json({ error: "Error guardando mensaje" });
   }
 });
 
 // =========================================================
-// 💬 CHAT COMPLETO CON MEMORIA SEMÁNTICA
+// 💬 CHAT COMPLETO CON MEMORIA SEMÁNTICA (optimizado)
 // =========================================================
 app.post("/chat", async (req, res) => {
+  const { conversation_id, user_message } = req.body;
+
+  if (!conversation_id || !user_message)
+    return res.status(400).json({ success: false, error: "Faltan datos requeridos." });
+
   try {
-    const { conversation_id, user_message } = req.body;
-    if (!conversation_id || !user_message)
-      return res.status(400).json({ success: false, error: "Faltan datos requeridos." });
+    console.log("==========================================");
+    console.log("🧠 NUEVO CHAT DE USUARIO");
+    console.log("🆔 Conversación:", conversation_id);
+    console.log("💬 Mensaje:", user_message);
 
-    // 1️⃣ Generar embedding del mensaje actual
+    // 1️⃣ Generar embedding del usuario
     const embUsuario = await generarEmbedding(user_message);
+    if (!embUsuario.length) throw new Error("Embedding del usuario vacío o inválido.");
 
-    // 2️⃣ Buscar recuerdos relevantes (5 más cercanos)
+    // 2️⃣ Buscar recuerdos relevantes
+    const embTexto = `[${embUsuario.join(",")}]`;
     const recuerdosRes = await pool.query(
       `SELECT role, content FROM fulltech_messages
        WHERE conversation_id = $1 AND embedding IS NOT NULL
-       ORDER BY embedding <-> $2 LIMIT 5`,
-      [conversation_id, embUsuario]
+       ORDER BY embedding <-> $2::vector
+       LIMIT 5`,
+      [conversation_id, embTexto]
     );
     const recuerdos = recuerdosRes.rows;
+    console.log(`📚 Recuerdos usados: ${recuerdos.length}`);
 
-    // 3️⃣ Generar respuesta IA con esos recuerdos
+    // 3️⃣ Generar respuesta IA
     const respuestaIA = await generarRespuestaIA(user_message, recuerdos);
 
     // 4️⃣ Guardar mensaje del usuario
     await pool.query(
       "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
-      [conversation_id, "user", user_message, `[${embUsuario.join(",")}]`]
+      [conversation_id, "user", user_message, embTexto]
     );
 
-    // 5️⃣ Guardar mensaje de la IA
+    // 5️⃣ Guardar mensaje del asistente
     const embIA = await generarEmbedding(respuestaIA);
+    if (!embIA.length) throw new Error("Embedding del asistente vacío o inválido.");
+    const embTextoIA = `[${embIA.join(",")}]`;
+
     await pool.query(
       "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
-      [conversation_id, "assistant", respuestaIA, `[${embIA.join(",")}]`]
+      [conversation_id, "assistant", respuestaIA, embTextoIA]
     );
 
-    // 6️⃣ Enviar respuesta al cliente
+    // 6️⃣ Responder al cliente
+    console.log("✅ Respuesta generada correctamente.");
     res.json({
       success: true,
       assistant_message: respuestaIA,
       recuerdos_usados: recuerdos.length,
     });
-
   } catch (err) {
-    console.error("❌ Error en /chat:", err.message);
-    res.status(500).json({ success: false, error: "Error procesando conversación." });
+    console.error("🚨 Error interno en /chat:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message || "Error procesando conversación.",
+    });
   }
 });
 

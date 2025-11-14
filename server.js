@@ -95,24 +95,48 @@ async function generarEmbedding(texto) {
 }
 
 // =========================================================
+// 🧠 Generar respuesta con contexto de memoria
+// =========================================================
+async function generarRespuestaIA(pregunta, recuerdos) {
+  const contexto =
+    recuerdos && recuerdos.length
+      ? recuerdos.map(r => `${r.role}: ${r.content}`).join("\n")
+      : "Sin recuerdos previos relevantes.";
+
+  const prompt = `
+Eres Fulltech AI Dev 🧠, un asistente profesional que ayuda a Junior López en el desarrollo de software y automatizaciones.
+
+Contexto de conversación previa:
+${contexto}
+
+Usuario: ${pregunta}
+Asistente:
+`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+    }),
+  });
+
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "No pude generar respuesta.";
+}
+
+// =========================================================
 // 🟢 ENDPOINTS BÁSICOS
 // =========================================================
-
-// 🩵 Ruta de prueba
 app.get("/ping", (_, res) => {
   res.json({ status: "✅ Servidor activo y corriendo correctamente" });
 });
 
-// 🩵 Endpoint adicional /status (útil para probar proxy externo)
-app.get("/status", (_, res) => {
-  res.json({
-    server: "✅ API FULLTECH - Online",
-    version: "1.0.0",
-    message: "Servidor funcional y aceptando peticiones.",
-  });
-});
-
-// 🩵 Crear nueva conversación
 app.post("/conversations", async (req, res) => {
   try {
     const { title } = req.body;
@@ -127,7 +151,6 @@ app.post("/conversations", async (req, res) => {
   }
 });
 
-// 🩵 Guardar mensaje con embedding
 app.post("/messages", async (req, res) => {
   try {
     const { conversation_id, role, content } = req.body;
@@ -155,7 +178,6 @@ app.post("/messages", async (req, res) => {
   }
 });
 
-// 🩵 Obtener historial de conversación
 app.get("/messages/:conversation_id", async (req, res) => {
   try {
     const r = await pool.query(
@@ -169,7 +191,6 @@ app.get("/messages/:conversation_id", async (req, res) => {
   }
 });
 
-// 🩵 Búsqueda semántica
 app.post("/memory/search", async (req, res) => {
   try {
     const { conversation_id, embedding, limit = 5 } = req.body;
@@ -184,6 +205,54 @@ app.post("/memory/search", async (req, res) => {
   } catch (err) {
     console.error("⚠️ Error en búsqueda semántica:", err.message);
     res.status(500).json({ error: "Error en búsqueda semántica" });
+  }
+});
+
+// =========================================================
+// 💬 Endpoint inteligente: CHAT CON MEMORIA REAL
+// =========================================================
+app.post("/chat", async (req, res) => {
+  try {
+    const { conversation_id, user_message } = req.body;
+
+    if (!conversation_id || !user_message)
+      return res.status(400).json({ error: "Faltan datos requeridos." });
+
+    // 1️⃣ Generar embedding de la pregunta
+    const emb = await generarEmbedding(user_message);
+
+    // 2️⃣ Buscar recuerdos relevantes
+    const recuerdosRes = await pool.query(
+      `SELECT role, content FROM fulltech_messages
+       WHERE conversation_id = $1 AND embedding IS NOT NULL
+       ORDER BY embedding <-> $2 LIMIT 5`,
+      [conversation_id, emb]
+    );
+    const recuerdos = recuerdosRes.rows;
+
+    // 3️⃣ Generar respuesta con esos recuerdos
+    const respuestaIA = await generarRespuestaIA(user_message, recuerdos);
+
+    // 4️⃣ Guardar mensaje del usuario y del asistente
+    await pool.query(
+      "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
+      [conversation_id, "user", user_message, `[${emb.join(",")}]`]
+    );
+
+    const embAsistente = await generarEmbedding(respuestaIA);
+    await pool.query(
+      "INSERT INTO fulltech_messages (conversation_id, role, content, embedding) VALUES ($1, $2, $3, $4::vector)",
+      [conversation_id, "assistant", respuestaIA, `[${embAsistente.join(",")}]`]
+    );
+
+    res.json({
+      success: true,
+      assistant_message: respuestaIA,
+      recuerdos_usados: recuerdos.length,
+    });
+  } catch (err) {
+    console.error("⚠️ Error en /chat:", err.message);
+    res.status(500).json({ error: "Error procesando conversación." });
   }
 });
 
